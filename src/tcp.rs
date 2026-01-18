@@ -69,7 +69,7 @@ impl TcpListenerRunner {
     fn create(
         device: VirtualDevice,
         iface: Interface,
-        iface_ingress_tx: UnboundedSender<Vec<u8>>,
+        iface_ingress_tx: Sender<Vec<u8>>,
         iface_ingress_tx_avail: Arc<AtomicBool>,
         tcp_rx: Receiver<AnyIpPktFrame>,
         stream_tx: UnboundedSender<TcpStream>,
@@ -78,11 +78,24 @@ impl TcpListenerRunner {
         Runner::new(async move {
             let notify = Arc::new(Notify::new());
             let (socket_tx, socket_rx) = unbounded_channel::<TcpSocketCreation>();
-            let res = tokio::select! {
-                v = Self::handle_packet(notify.clone(), iface_ingress_tx, iface_ingress_tx_avail.clone(), tcp_rx, stream_tx, socket_tx) => v,
-                v = Self::handle_socket(notify, device, iface, iface_ingress_tx_avail, sockets, socket_rx) => v,
-            };
-            res?;
+            let packet_fut = Self::handle_packet(
+                notify.clone(),
+                iface_ingress_tx,
+                iface_ingress_tx_avail.clone(),
+                tcp_rx,
+                stream_tx,
+                socket_tx
+            );
+
+            let socket_fut = Self::handle_socket(
+                notify,
+                device,
+                iface,
+                iface_ingress_tx_avail,
+                sockets,
+                socket_rx
+            );
+            tokio::try_join!(packet_fut, socket_fut)?;
             trace!("VirtDevice::poll thread exited");
             Ok(())
         })
@@ -90,7 +103,7 @@ impl TcpListenerRunner {
 
     async fn handle_packet(
         notify: SharedNotify,
-        iface_ingress_tx: UnboundedSender<Vec<u8>>,
+        iface_ingress_tx: Sender<Vec<u8>>,
         iface_ingress_tx_avail: Arc<AtomicBool>,
         mut tcp_rx: Receiver<AnyIpPktFrame>,
         stream_tx: UnboundedSender<TcpStream>,
@@ -109,6 +122,7 @@ impl TcpListenerRunner {
             if matches!(packet.protocol(), IpProtocol::Icmp | IpProtocol::Icmpv6) {
                 iface_ingress_tx
                     .send(frame)
+                    .await
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))?;
                 iface_ingress_tx_avail.store(true, Ordering::Release);
                 notify.notify_one();
@@ -176,6 +190,7 @@ impl TcpListenerRunner {
             // Pipeline tcp stream packet
             iface_ingress_tx
                 .send(frame)
+                .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::BrokenPipe, e))?;
             iface_ingress_tx_avail.store(true, Ordering::Release);
             notify.notify_one();

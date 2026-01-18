@@ -7,22 +7,22 @@ use smoltcp::{
     phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken},
     time::Instant,
 };
-use tokio::sync::mpsc::{unbounded_channel, Permit, Sender, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{channel, Permit, Sender, Receiver};
 
 use crate::packet::AnyIpPktFrame;
 
 pub(super) struct VirtualDevice {
     in_buf_avail: Arc<AtomicBool>,
-    in_buf: UnboundedReceiver<Vec<u8>>,
+    in_buf: Receiver<Vec<u8>>,
     out_buf: Sender<AnyIpPktFrame>,
 }
 
 impl VirtualDevice {
     pub(super) fn new(
         iface_egress_tx: Sender<AnyIpPktFrame>,
-    ) -> (Self, UnboundedSender<Vec<u8>>, Arc<AtomicBool>) {
+    ) -> (Self, Sender<Vec<u8>>, Arc<AtomicBool>) {
         let iface_ingress_tx_avail = Arc::new(AtomicBool::new(false));
-        let (iface_ingress_tx, iface_ingress_rx) = unbounded_channel();
+        let (iface_ingress_tx, iface_ingress_rx) = channel(1 << 11);
         (
             Self {
                 in_buf_avail: iface_ingress_tx_avail.clone(),
