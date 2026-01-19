@@ -35,8 +35,8 @@ use crate::{
 };
 
 // NOTE: Default buffer could contain 20 AEAD packets
-const DEFAULT_TCP_SEND_BUFFER_SIZE: u32 = 0x3FFF * 20;
-const DEFAULT_TCP_RECV_BUFFER_SIZE: u32 = 0x3FFF * 20;
+const DEFAULT_TCP_SEND_BUFFER_SIZE: u32 = 1 << 24;
+const DEFAULT_TCP_RECV_BUFFER_SIZE: u32 = 1 << 24;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum TcpSocketState {
@@ -156,7 +156,7 @@ impl TcpListenerRunner {
                 // FIXME: It should follow system's setting. 7200 is Linux's default.
                 socket.set_timeout(Some(Duration::from_secs(7200)));
                 // NO ACK delay
-                // socket.set_ack_delay(None);
+                socket.set_ack_delay(None);
 
                 if let Err(err) = socket.listen(dst_addr) {
                     error!("listen error: {:?}", err);
